@@ -44,3 +44,4 @@ SummariseResults/*
 output/*
 CohortSummary.R
 postgresql-42.2.18.jar 
+descriptive stats vaccinated.R 
