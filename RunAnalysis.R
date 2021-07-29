@@ -1288,7 +1288,7 @@ table(working.Pop.w.outcome$age_gr, useNA = "always")
 working.Pop.w.outcome<-working.Pop.w.outcome %>% 
   mutate(age_gr2=ifelse(age>=20 &  age<=44,  "20-44",
                  ifelse(age>=45 & age<=64,  "45-64",    
-                 ifelse(age>=55, ">=65",
+                 ifelse(age>=65, ">=65",
                        NA)))) %>% 
   mutate(age_gr2= factor(age_gr2, 
                    levels = c("20-44", "45-64",">=65")))
