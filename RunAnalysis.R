@@ -759,10 +759,10 @@ med.persons <- drug_era_db %>%
          cohort_start_date) %>% 
   distinct() %>% 
   collect() %>%
-  filter(drug_era_start_date<=(cohort_start_date-days(4))
-          & drug_era_start_date>=(cohort_start_date-days(183)) |
-           drug_era_end_date<=(cohort_start_date-days(4))
-                 & drug_era_end_date>=(cohort_start_date-days(183))) %>% 
+  filter( ( drug_era_start_date<=(cohort_start_date-days(4))
+          & drug_era_start_date>=(cohort_start_date-days(183)) ) |
+           ( drug_era_end_date<=(cohort_start_date-days(4))
+                 & drug_era_end_date>=(cohort_start_date-days(183) ) )) %>% 
   select(person_id, drug_id) %>% 
   distinct() 
 
