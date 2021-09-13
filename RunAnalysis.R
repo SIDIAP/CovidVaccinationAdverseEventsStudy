@@ -759,10 +759,10 @@ med.persons <- drug_era_db %>%
          cohort_start_date) %>% 
   distinct() %>% 
   collect() %>%
-  filter(drug_era_start_date<=(cohort_start_date-days(4))
-          & drug_era_start_date>=(cohort_start_date-days(183)) |
-           drug_era_end_date<=(cohort_start_date-days(4))
-                 & drug_era_end_date>=(cohort_start_date-days(183))) %>% 
+  filter( ( drug_era_start_date<=(cohort_start_date-days(4))
+          & drug_era_start_date>=(cohort_start_date-days(183)) ) |
+           ( drug_era_end_date<=(cohort_start_date-days(4))
+                 & drug_era_end_date>=(cohort_start_date-days(183) ) )) %>% 
   select(person_id, drug_id) %>% 
   distinct() 
 
@@ -1288,7 +1288,7 @@ table(working.Pop.w.outcome$age_gr, useNA = "always")
 working.Pop.w.outcome<-working.Pop.w.outcome %>% 
   mutate(age_gr2=ifelse(age>=20 &  age<=44,  "20-44",
                  ifelse(age>=45 & age<=64,  "45-64",    
-                 ifelse(age>=55, ">=65",
+                 ifelse(age>=65, ">=65",
                        NA)))) %>% 
   mutate(age_gr2= factor(age_gr2, 
                    levels = c("20-44", "45-64",">=65")))
