@@ -183,6 +183,58 @@ outcome.cohorts.thromb.42_14)
 
 
 
+# instantiate COVID tables -----
+cohort.sql<-list.files(here("COVIDCohorts", "sql"))
+cohort.sql<-cohort.sql[cohort.sql!="CreateCohortTable.sql"]
+covid.cohorts<-tibble(id=1:length(cohort.sql),
+                      file=cohort.sql,
+                      name=str_replace(cohort.sql, ".sql", ""))  
+if(create.covid.cohorts=="FALSE"){
+  print(paste0("- Skipping creating COVID cohorts"))
+} else { 
+  print(paste0("- Getting COVID cohorts"))
+  conn <- connect(connectionDetails)
+
+# create empty cohorts table
+  print(paste0("Create empty cohort table")) 
+  sql<-readSql(here("CovidCohorts", "sql","CreateCohortTable.sql"))
+  sql<-SqlRender::translate(sql, targetDialect = targetDialect)
+  renderTranslateExecuteSql(conn=conn, 
+                            sql,
+                            cohort_database_schema = results_database_schema,
+                            cohort_table = cohortTableCOVID)
+  
+  rm(sql)
+ 
+   for(cohort.i in 1:length(covid.cohorts$id)){
+    
+    working.id<-covid.cohorts$id[cohort.i]
+    
+    print(paste0("- Getting cohort: ", 
+                 covid.cohorts$name[cohort.i],
+                 " (", cohort.i, " of ", length(covid.cohorts$name), ")"))
+    sql<-readSql(here("CovidCohorts", "sql",
+                      covid.cohorts$file[cohort.i])) 
+    sql <- sub("BEGIN: Inclusion Impact Analysis - event.*END: Inclusion Impact Analysis - person", "", sql)
+    
+    sql<-SqlRender::translate(sql, targetDialect = targetDialect)
+    renderTranslateExecuteSql(conn=conn, 
+                              sql, 
+                              cdm_database_schema = cdm_database_schema,
+                              vocabulary_database_schema = vocabulary_database_schema,
+                              target_database_schema = results_database_schema,
+                              results_database_schema = results_database_schema,
+                              target_cohort_table = cohortTableCOVID,
+                              target_cohort_id = working.id)  
+  }
+  disconnect(conn)
+}
+
+covid_db<-tbl(db, sql(paste0("SELECT * FROM ",
+                             results_database_schema,
+                             ".", cohortTableCOVID)))   
+
+
 # run analysis ----
 # Initiate lists to store output
 Patient.characteristcis<-list() # to collect tables of characteristics
@@ -193,22 +245,29 @@ Survival.summary<-list() # to collect incidence
 study.cohorts<-list()
 
 if(run.vax.cohorts=="TRUE"){
-study.cohorts[["vaccinated"]]<-tibble(id=1:6,
+study.cohorts[["vaccinated"]]<-tibble(id=1:8,
                         file=NA,
                         name=c("BNT162b2 first-dose", 
                                "BNT162b2 second-dose", 
                                "ChAdOx1 first-dose",
+                               "ChAdOx1 second-dose",
                                "BNT162b2 first-dose (no prior covid)", 
                                "BNT162b2 second-dose (no prior covid)", 
-                               "ChAdOx1 first-dose (no prior covid)")) %>% 
+                               "ChAdOx1 first-dose (no prior covid)", 
+                               "ChAdOx1 second-dose (no prior covid)")) %>% 
   mutate(type="VaccinatedCohorts")
 }
 
 if(run.covid.cohorts=="TRUE"){
-study.cohorts[["covid"]]<-tibble(id=1,
-                        file=NA,
-                        name=c("COVID-19 diagnosis")) %>% 
-  mutate(type="CovidCohorts")
+  study.cohorts.sql.covid<-list.files(here("CovidCohorts", "sql"))
+  study.cohorts.sql.covid<-study.cohorts.sql.covid[study.cohorts.sql.covid!="CreateCohortTable.sql"]
+  #drop the two covid cohorts we only use for exclusions
+  study.cohorts.sql.covid<-study.cohorts.sql.covid[study.cohorts.sql.covid!="COVID19 positive test.sql"]
+  study.cohorts.sql.covid<-study.cohorts.sql.covid[study.cohorts.sql.covid!="COVID19 diagnosis broad.sql"]
+  study.cohorts[["covid"]]<-tibble(id=1:length(study.cohorts.sql.covid),
+                                   file=study.cohorts.sql.covid,
+                                   name=str_replace(study.cohorts.sql.covid, ".sql", ""))  %>%  
+    mutate(type="CovidCohorts")
 }
 
 if(run.general.pop.cohorts=="TRUE"){
@@ -251,16 +310,30 @@ rm(sql)
 # get current exposure population
 if(working.study.cohort.type=="VaccinatedCohorts"){
 
+  #exclude people with more than one type of vaccine 
+  mixed_doses <- drug_exposure_db %>%
+    filter((drug_concept_id=="37003436")|(drug_concept_id=="724905")|
+             (drug_concept_id=="37003518")|(drug_concept_id=="739906")) %>% 
+    group_by(person_id) %>% 
+    summarise(unique=n_distinct(drug_concept_id)) %>%
+    filter(unique>="2") %>% 
+    collect()  
+  
+  
   if(str_detect(working.study.cohort, "BNT162b2")){
     cohort.to.instantiate<-drug_exposure_db %>% 
       filter(drug_concept_id=="37003436") %>% 
       collect()
+    cohort.to.instantiate<-cohort.to.instantiate %>% 
+      anti_join(mixed_doses)
   } 
   
     if(str_detect(working.study.cohort, "ChAdOx1")){
     cohort.to.instantiate<-drug_exposure_db %>% 
       filter(drug_concept_id=="724905") %>% 
       collect()
+    cohort.to.instantiate<-cohort.to.instantiate %>% 
+      anti_join(mixed_doses)
     } 
   
 cohort.to.instantiate<-cohort.to.instantiate %>% 
@@ -346,12 +419,11 @@ if(str_detect(working.study.cohort, "BNT162b2 second-dose")){
      # prop.table(table(cohort.to.instantiate$dose1_dose2>21))
        
        }
-if(str_detect(working.study.cohort, "mRNA-1273 second-dose")){      
-       cohort.to.instantiate<-cohort.to.instantiate  %>% 
-      filter(dose1_dose2>=25) %>% 
-      filter(dose1_dose2<=35)   
-       
-       }      
+if(str_detect(working.study.cohort, "ChAdOx1 second-dose")){      
+        cohort.to.instantiate<-cohort.to.instantiate  %>% 
+        filter(dose1_dose2>=60) %>% 
+        filter(dose1_dose2<=110) 
+}        
       
      
      
@@ -431,70 +503,72 @@ insertTable(connection=conn,
   
 } else if (working.study.cohort.type=="CovidCohorts"){
 
-if(str_detect(working.study.cohort, "COVID-19 diagnosis")){
+if(str_detect(working.study.cohort, "COVID19 PCR")){
 
-# covid diagnosis
-covid.diagnosis.codes<-bind_rows(
-# codes with descendants
-concept_ancestor_db %>%
-  filter(ancestor_concept_id  %in% 
-           c(37311060,37311061)) %>% 
-  select(descendant_concept_id)  %>% 
-  select(descendant_concept_id) %>% 
-  rename(concept_id=descendant_concept_id)%>% 
-  left_join(concept_db) %>% 
-  select(concept_id,concept_name, standard_concept,domain_id ) %>% 
-  collect() ,
-# codes without descendants
-concept_db %>% 
-  filter(concept_id %in% 
-     c(37396171,320651,40479642,
-       37016927,4100065,439676 ))%>% 
-  select(concept_id,concept_name, standard_concept,domain_id ) %>% 
-  collect() ) %>% 
-  mutate(cohort="Covid diagnosis")     
-working.codes<-covid.diagnosis.codes %>% select(concept_id) %>% pull()  
+target.id<-covid.cohorts %>% 
+    filter(name=="COVID19 PCR positive test") %>% 
+    select(id) %>% 
+    pull()
+  
+cohort.to.instantiate <- person_db %>%
+    select(person_id) %>%
+    inner_join(covid_db %>%  
+  filter(cohort_definition_id==target.id) %>% 
+                 select(subject_id, cohort_start_date) %>% 
+                 rename("person_id"="subject_id"),
+               by = "person_id") %>%
+    collect() 
 
-cohort.to.instantiate<-condition_occurrence_db  %>% 
-      filter(condition_concept_id %in% working.codes) %>% 
-      collect()
-
-cohort.to.instantiate<-cohort.to.instantiate %>% 
-     filter(condition_start_date>=as.Date("01/01/2020", "%d/%m/%y"))%>% 
-      group_by(person_id) %>% 
-      arrange(person_id, condition_start_date) %>% 
-      mutate(seq=1:length(person_id)) %>% 
-  filter(seq==1) # persons first covid diagnosis
-
-# cases between   "01/09/2020" and "01/09/2020" 
-#     min(cohort.to.instantiate$condition_start_date)
-#     max(cohort.to.instantiate$condition_start_date)
-# cohort.to.instantiate %>%
-#       ggplot()+
-#       geom_histogram(aes(condition_start_date), binwidth = 1)
+  
 
 working.start.date<-dmy("01/09/2020")
-working.end.date<-dmy("01/03/2021")
+working.end.date<-dmy("23/06/2021") 
 cohort.to.instantiate<-cohort.to.instantiate %>% 
-     filter(condition_start_date>=working.start.date) %>% 
-     filter(condition_start_date<=working.end.date)  
-
+     filter(cohort_start_date>=working.start.date) %>% 
+     filter(cohort_start_date<=working.end.date)  
 
 cohort.to.instantiate<-cohort.to.instantiate %>% 
       mutate(cohort_definition_id=study.cohorts$id[i]) %>% 
       rename("subject_id"="person_id") %>% 
-      rename("cohort_start_date"="condition_start_date")%>% 
-      mutate("cohort_end_date"=as.Date("26/05/2021", "%d/%m/%y")) %>% 
+      rename("cohort_start_date"="cohort_start_date")%>% 
+      mutate("cohort_end_date"=as.Date("23/06/2021", "%d/%m/%y")) %>%  
       select(cohort_definition_id, subject_id, cohort_start_date,cohort_end_date)
+
+# drop if vaccinated prior to COVID 
+vaccines <-drug_exposure_db %>% 
+  filter(drug_concept_id=="37003436"|
+           drug_concept_id=="724905"|
+           drug_concept_id=="37003518"|
+           drug_concept_id=="739906") %>% 
+  select(person_id, drug_exposure_start_date) %>% 
+  distinct()%>% # drop any duplicates from same day
+  collect()
+
+vaccines <- vaccines %>%
+  arrange(person_id,drug_exposure_start_date) %>% 
+  group_by(person_id) %>% 
+  mutate(seq=1:length(person_id))
+
+# keep first record
+vaccines <-vaccines%>% 
+  filter(seq==1) 
+
+# drop if vaccine was before on date of covid
+vaccinated_covid <-cohort.to.instantiate %>% 
+  inner_join(vaccines%>% 
+               select(person_id,drug_exposure_start_date)%>%
+               rename("subject_id"="person_id")) %>% 
+  filter(cohort_start_date>= drug_exposure_start_date)
+
+cohort.to.instantiate<-cohort.to.instantiate %>% 
+  anti_join(vaccinated_covid)   
 
 insertTable(connection=conn,
             tableName=paste0(results_database_schema, ".",cohortTableExposures),
-            data=cohort.to.instantiate,
+            data=data.frame(cohort.to.instantiate),
             createTable = FALSE,
             progressBar=TRUE)
-
     }
- 
 
 } else {
 sql<-readSql(here(working.study.cohort.type, "sql",
@@ -616,36 +690,41 @@ Pop<-Pop %>%
   mutate(prior_obs_years=prior_obs_days/365.25)
 
 
-# add medea -----
-MEDEA<-observation_db %>% 
-  filter(observation_source_value	=="medea") %>% 
-  collect()
-
+# medea -----
 # U1 is quintile 1 of MEDEA which is the least deprived areas, 
 # U5 is quintile 5 and represent the most deprived areas. "R" is or rural areas for which we cannot
 # calculate MEDEA. And "U" means a person is assigned to a urban area but the quintile of MEDEA is missing.
-
+MEDEA<-observation_db%>% 
+  filter( observation_source_value	=="medea11") %>% 
+  collect()
 # no individuals have more than one record
 length(unique(MEDEA$person_id))/ nrow(MEDEA)
+table(MEDEA$value_as_string, useNA="always")
 
-# drop values "" as missing
+MEDEA <- MEDEA %>%
+  mutate(medea = ifelse (str_detect(value_as_string, "1"), "Q1",
+                               ifelse(str_detect(value_as_string, "2"), "Q2",
+                                      ifelse(str_detect(value_as_string, "3"), "Q3",
+                                             ifelse(str_detect(value_as_string, "4"), "Q4",
+                                                    ifelse(str_detect(value_as_string, "5"), "Q5",
+                                                          ifelse(str_detect(value_as_string, "0"), "Missing", 
+                                                                NA)))))))
+
+table(MEDEA$medea, useNA="always")
+
+# drop missing
 MEDEA<-MEDEA %>% 
-  filter(value_as_string %in% c("R", "U1", "U2", "U3", "U4", "U5") )
+  filter(medea %in%
+           c("Q1","Q2","Q3","Q4","Q5"))
+table(MEDEA$medea, useNA="always")
 
-# dates
-# hist(year(MEDEA$observation_date))
-
-# add to person
+# add to Pop
 Pop<-Pop %>% 
   left_join(MEDEA %>% 
-              select(person_id, value_as_string) %>% 
-              rename(medea=value_as_string)  )
+              select(person_id, medea)   )
+prop.table(table(Pop$medea, useNA="always"))
+
 rm(MEDEA)
-
-prop.table(table(Pop$medea, useNA = "always"))
-
-
-
 
 # condition history ------
 
@@ -849,18 +928,16 @@ data.frame(Overall=t(working.data %>%
   prior_obs_years=paste0(nice.num(median(prior_obs_years)),
                      " [", nice.num(quantile(prior_obs_years,probs=0.25)), 
                      " to ", nice.num(quantile(prior_obs_years,probs=0.75)),   "]" ),
-  medea.R=paste0(nice.num.count(sum(medea=="R", na.rm = T)),
-                    " (",  nice.num((sum(medea=="R", na.rm = T)/length(person_id))*100),"%)"),
-  medea.U1=paste0(nice.num.count(sum(medea=="U1", na.rm = T)),
-                    " (",  nice.num((sum(medea=="U1", na.rm = T)/length(person_id))*100),"%)"),
-  medea.U2=paste0(nice.num.count(sum(medea=="U2", na.rm = T)),
-                    " (",  nice.num((sum(medea=="U2", na.rm = T)/length(person_id))*100),"%)"),
-  medea.U3=paste0(nice.num.count(sum(medea=="U3", na.rm = T)),
-                    " (",  nice.num((sum(medea=="U3", na.rm = T)/length(person_id))*100),"%)"),
-  medea.U4=paste0(nice.num.count(sum(medea=="U4", na.rm = T)),
-                    " (",  nice.num((sum(medea=="U4", na.rm = T)/length(person_id))*100),"%)"),
-  medea.U5=paste0(nice.num.count(sum(medea=="U5", na.rm = T)),
-                    " (",  nice.num((sum(medea=="U5", na.rm = T)/length(person_id))*100),"%)"),
+  medea.U1=paste0(nice.num.count(sum(medea=="Q1", na.rm = T)),
+                    " (",  nice.num((sum(medea=="Q1", na.rm = T)/length(person_id))*100),"%)"),
+  medea.U2=paste0(nice.num.count(sum(medea=="Q2", na.rm = T)),
+                    " (",  nice.num((sum(medea=="Q2", na.rm = T)/length(person_id))*100),"%)"),
+  medea.U3=paste0(nice.num.count(sum(medea=="Q3", na.rm = T)),
+                    " (",  nice.num((sum(medea=="Q3", na.rm = T)/length(person_id))*100),"%)"),
+  medea.U4=paste0(nice.num.count(sum(medea=="Q4", na.rm = T)),
+                    " (",  nice.num((sum(medea=="Q4", na.rm = T)/length(person_id))*100),"%)"),
+  medea.U5=paste0(nice.num.count(sum(medea=="Q5", na.rm = T)),
+                    " (",  nice.num((sum(medea=="Q5", na.rm = T)/length(person_id))*100),"%)"),
   medea.Miss=paste0(nice.num.count(sum(is.na(medea))),
                     " (",  nice.num((sum(is.na(medea))/length(person_id))*100),"%)"),
   ))),
@@ -1018,7 +1095,7 @@ Pop.summary.characteristics.from.march.age_gr2.3.with.history<-get.summary.chara
 
 # results for each outcome of interest -----
 
-# for(j in 1:1){ # for each outcome of interest
+# for(j in 1:1){ 
 for(j in 1:length(outcome.cohorts$id)){ # for each outcome of interest
 working.outcome<-outcome.cohorts$id[j]
 working.outcome.name<-outcome.cohorts$name[j]
