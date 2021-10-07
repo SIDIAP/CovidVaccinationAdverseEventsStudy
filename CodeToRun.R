@@ -36,8 +36,8 @@ oracleTempSchema<-NULL
 # If you haven´t already, save database details to .Renviron by running:
 # usethis::edit_r_environ()
 
-server<-"10.80.192.22/postgres20v3fwd"
-server_dbi<-"postgres20v3fwd"
+server<-"10.80.192.22/postgres21"
+server_dbi<-"postgres21"
 
 user<-Sys.getenv("DB_USER")
 password<- Sys.getenv("DB_PASSWORD")
@@ -65,24 +65,26 @@ db <- dbConnect(RPostgreSQL::PostgreSQL(),
 # sql dialect used with the OHDSI SqlRender package
 targetDialect <-"postgresql" 
 # schema that contains the OMOP CDM with patient-level data
-cdm_database_schema<-"omop20v3fwd"
+cdm_database_schema<-"omop21padris"
 # schema that contains the vocabularie
-vocabulary_database_schema<-"omop20v3fwd" 
+vocabulary_database_schema<-"omop21padris"
 # schema where a results table will be created 
-results_database_schema<-"results20v3fwd"
+results_database_schema<-"results21padris"
 
 # Tables to be created in your results schema for this analysis
 # You can keep the above names or change them
 # Note, any existing tables in your results schema with the same name will be overwritten
-cohortTableExposures<-"CovVaxExposures"
-cohortTableOutcomes <-"CovVaxOutcomes"
-cohortTableProfiles<-"CovVaxProfiles"
+cohortTableExposures<-"EB_CovVaxExposures"
+cohortTableOutcomes <-"EB_CovVaxOutcomes"
+cohortTableCOVID <-"EB_CovVaxCOVID"
+cohortTableProfiles<-"EB_CovVaxProfiles"
 
-db.name<-"SIDIAP"
+db.name<-"SIDIAP CMBDH"
 # This is the name/ acronym for your database (to be used in the titles of reports, etc) 
 
 create.outcome.cohorts<-FALSE
-# if you have already created the outcome cohorts, you can set this to FALSE to skip instantiating these cohorts again
+create.covid.cohorts<-FALSE
+# if you have already created the  cohorts, you can set this to FALSE to skip instantiating these cohorts again
 
 run.vax.cohorts<-TRUE
 run.covid.cohorts<-TRUE
