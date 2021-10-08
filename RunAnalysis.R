@@ -838,10 +838,10 @@ med.persons <- drug_era_db %>%
          cohort_start_date) %>% 
   distinct() %>% 
   collect() %>%
-  filter( ( drug_era_start_date<=(cohort_start_date-days(4))
-          & drug_era_start_date>=(cohort_start_date-days(183)) ) |
-           ( drug_era_end_date<=(cohort_start_date-days(4))
-                 & drug_era_end_date>=(cohort_start_date-days(183) ) )) %>% 
+  filter(drug_era_start_date<=(cohort_start_date-days(4))
+          & drug_era_start_date>=(cohort_start_date-days(183)) |
+           drug_era_end_date<=(cohort_start_date-days(4))
+                 & drug_era_end_date>=(cohort_start_date-days(183))) %>% 
   select(person_id, drug_id) %>% 
   distinct() 
 
@@ -1095,7 +1095,7 @@ Pop.summary.characteristics.from.march.age_gr2.3.with.history<-get.summary.chara
 
 # results for each outcome of interest -----
 
-# for(j in 1:1){ 
+# for(j in 22:22){ 
 for(j in 1:length(outcome.cohorts$id)){ # for each outcome of interest
 working.outcome<-outcome.cohorts$id[j]
 working.outcome.name<-outcome.cohorts$name[j]
@@ -1365,7 +1365,7 @@ table(working.Pop.w.outcome$age_gr, useNA = "always")
 working.Pop.w.outcome<-working.Pop.w.outcome %>% 
   mutate(age_gr2=ifelse(age>=20 &  age<=44,  "20-44",
                  ifelse(age>=45 & age<=64,  "45-64",    
-                 ifelse(age>=65, ">=65",
+                 ifelse(age>=55, ">=65",
                        NA)))) %>% 
   mutate(age_gr2= factor(age_gr2, 
                    levels = c("20-44", "45-64",">=65")))
@@ -3282,6 +3282,8 @@ get.Surv.summaries<-function(working.data,
                            value.working.outcome.name,
                            value.working.study.cohort, 
                            working.times){
+  
+  if(nrow(working.data %>% filter(f_u.outcome==1))>0){
   # add to working.Survival.summary
     working.Survival.summary<-list()
   
@@ -3485,7 +3487,11 @@ working.Survival.summary[[paste0(value.working.study.cohort,";",value.working.ou
   mutate(prior.obs.required=value.prior.obs.required)   %>% 
   mutate(pop=value.working.study.cohort)
 
-bind_rows(working.Survival.summary,.id = NULL)
+bind_rows(working.Survival.summary,.id = NULL) 
+  } else {
+  
+    tibble()
+}
 
   
 }
